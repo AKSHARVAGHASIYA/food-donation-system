@@ -1,0 +1,403 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// ENUMS FOR DATA INTEGRITY AND VALIDATION
+// ==========================================
+
+enum UserRole {
+  ADMIN
+  DONOR
+  NGO
+  VOLUNTEER
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING_VERIFICATION
+  SUSPENDED
+}
+
+enum DonorType {
+  INDIVIDUAL
+  RESTAURANT
+  SUPERMARKET
+  CORPORATE_CAFETERIA
+  HOTEL
+  OTHER
+}
+
+enum FoodCategory {
+  COOKED_MEALS
+  RAW_INGREDIENTS
+  PACKAGED_FOOD
+  BAKERY
+  PRODUCE_FRUITS_VEG
+  BEVERAGES
+  DAIRY
+}
+
+enum FoodUnit {
+  KG
+  MEALS
+  PACKETS
+  LITERS
+  BOXES
+}
+
+enum DietaryType {
+  VEGETARIAN
+  NON_VEGETARIAN
+  VEGAN
+  CONTAINS_EGG
+}
+
+enum StorageRequirement {
+  ROOM_TEMPERATURE
+  REFRIGERATED
+  FROZEN
+  HEATED
+}
+
+enum ListingStatus {
+  AVAILABLE
+  PARTIALLY_ALLOCATED
+  FULLY_ALLOCATED
+  EXPIRED
+  CANCELLED
+}
+
+enum NgoVerificationStatus {
+  VERIFIED
+  PENDING
+  REJECTED
+}
+
+enum VulnerabilityType {
+  CHILDREN_ORPHANAGE
+  HOMELESS_SHELTER
+  ELDERLY_CARE
+  DISASTER_RELIEF
+  LOW_INCOME_COMMUNITY
+  MIGRANT_WORKERS
+}
+
+enum RequestUrgency {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RequestStatus {
+  PENDING
+  PARTIALLY_FULFILLED
+  FULFILLED
+  CANCELLED
+  EXPIRED
+}
+
+enum AllocationStatus {
+  RESERVED
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
+enum VehicleType {
+  BIKE
+  CAR
+  VAN
+  REFRIGERATED_TRUCK
+  WALKING
+  AUTO_RICKSHAW
+}
+
+enum VolunteerStatus {
+  AVAILABLE
+  ON_DUTY
+  BUSY
+  INACTIVE
+}
+
+enum PickupStatus {
+  SCHEDULED
+  ASSIGNED
+  EN_ROUTE_TO_PICKUP
+  PICKED_UP
+  DELIVERED_TO_HUB
+  FAILED
+  CANCELLED
+}
+
+enum DistributionStatus {
+  PREPARED
+  IN_TRANSIT
+  DISTRIBUTED
+  PARTIALLY_DISTRIBUTED
+  RETURNED_WASTE
+}
+
+// ==========================================
+// 1. USER ENTITY
+// ==========================================
+model User {
+  id            Int        @id @default(autoincrement())
+  email         String     @unique @db.VarChar(191)
+  password_hash String     @db.VarChar(255)
+  full_name     String     @db.VarChar(150)
+  phone         String?    @db.VarChar(50)
+  role          UserRole   @default(DONOR)
+  status        UserStatus @default(ACTIVE)
+  address       String?    @db.VarChar(255)
+  city          String?    @db.VarChar(100)
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+
+  donorProfile       FoodDonor?
+  ngoProfile         Ngo?
+  volunteerProfile   Volunteer?
+  managedAllocations RequestAllocation[]
+
+  @@map("users")
+}
+
+// ==========================================
+// 2. FOOD_DONOR ENTITY
+// ==========================================
+model FoodDonor {
+  id                Int       @id @default(autoincrement())
+  user_id           Int       @unique
+  donor_type        DonorType @default(RESTAURANT)
+  organization_name String?   @db.VarChar(150)
+  fssai_license     String?   @db.VarChar(100)
+  pickup_address    String    @db.Text
+  contact_person    String?   @db.VarChar(100)
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  user     User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  listings FoodListing[]
+
+  @@map("food_donors")
+}
+
+// ==========================================
+// 3. FOOD_LISTING ENTITY
+// ==========================================
+model FoodListing {
+  id                  Int                @id @default(autoincrement())
+  donor_id            Int
+  title               String             @db.VarChar(200)
+  food_category       FoodCategory
+  quantity            Decimal            @db.Decimal(10, 2)
+  available_quantity  Decimal            @db.Decimal(10, 2)
+  unit                FoodUnit           @default(MEALS)
+  expiry_date         DateTime
+  dietary_type        DietaryType        @default(VEGETARIAN)
+  storage_requirement StorageRequirement @default(ROOM_TEMPERATURE)
+  status              ListingStatus      @default(AVAILABLE)
+  pickup_address      String             @db.Text
+  city                String             @db.VarChar(100)
+  special_notes       String?            @db.Text
+  created_at          DateTime           @default(now())
+  updated_at          DateTime           @updatedAt
+
+  donor       FoodDonor           @relation(fields: [donor_id], references: [id], onDelete: Cascade)
+  allocations RequestAllocation[]
+  pickups     Pickup[]
+
+  @@index([donor_id])
+  @@index([food_category, status, expiry_date])
+  @@index([city])
+  @@map("food_listings")
+}
+
+// ==========================================
+// 4. NGO ENTITY
+// ==========================================
+model Ngo {
+  id                  Int                   @id @default(autoincrement())
+  user_id             Int                   @unique
+  ngo_name            String                @db.VarChar(150)
+  registration_number String                @unique @db.VarChar(100)
+  darpan_id           String?               @db.VarChar(100)
+  service_area        String                @db.VarChar(255)
+  verification_status NgoVerificationStatus @default(VERIFIED)
+  contact_person      String                @db.VarChar(100)
+  capacity_people_fed Int                   @default(100)
+  created_at          DateTime              @default(now())
+  updated_at          DateTime              @updatedAt
+
+  user              User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  requests          FoodRequest[]
+  beneficiaryGroups BeneficiaryGroup[]
+  distributions     Distribution[]
+
+  @@map("ngos")
+}
+
+// ==========================================
+// 9. BENEFICIARY_GROUP ENTITY
+// ==========================================
+model BeneficiaryGroup {
+  id                     Int               @id @default(autoincrement())
+  ngo_id                 Int
+  group_name             String            @db.VarChar(150)
+  location               String            @db.VarChar(255)
+  target_headcount       Int
+  vulnerability_type     VulnerabilityType @default(LOW_INCOME_COMMUNITY)
+  contact_representative String?           @db.VarChar(100)
+  notes                  String?           @db.Text
+  created_at             DateTime          @default(now())
+  updated_at             DateTime          @updatedAt
+
+  ngo           Ngo            @relation(fields: [ngo_id], references: [id], onDelete: Cascade)
+  requests      FoodRequest[]
+  distributions Distribution[]
+
+  @@index([ngo_id])
+  @@map("beneficiary_groups")
+}
+
+// ==========================================
+// 5. FOOD_REQUEST ENTITY
+// (Notice: listing_id is NOT in FOOD_REQUEST;
+//  junction table RequestAllocation is used)
+// ==========================================
+model FoodRequest {
+  id                      Int            @id @default(autoincrement())
+  ngo_id                  Int
+  beneficiary_group_id    Int?
+  requested_food_category FoodCategory
+  required_quantity       Decimal        @db.Decimal(10, 2)
+  fulfilled_quantity      Decimal        @default(0.00) @db.Decimal(10, 2)
+  unit                    FoodUnit       @default(MEALS)
+  urgency_level           RequestUrgency @default(MEDIUM)
+  status                  RequestStatus  @default(PENDING)
+  needed_by               DateTime
+  delivery_address        String         @db.Text
+  city                    String         @db.VarChar(100)
+  notes                   String?        @db.Text
+  created_at              DateTime       @default(now())
+  updated_at              DateTime       @updatedAt
+
+  ngo              Ngo                 @relation(fields: [ngo_id], references: [id], onDelete: Cascade)
+  beneficiaryGroup BeneficiaryGroup?   @relation(fields: [beneficiary_group_id], references: [id], onDelete: SetNull)
+  allocations      RequestAllocation[]
+
+  @@index([ngo_id])
+  @@index([beneficiary_group_id])
+  @@index([status, needed_by])
+  @@map("food_requests")
+}
+
+// ==========================================
+// 10. REQUEST_ALLOCATION (JUNCTION TABLE)
+// ==========================================
+model RequestAllocation {
+  id                   Int              @id @default(autoincrement())
+  request_id           Int
+  listing_id           Int
+  allocated_quantity   Decimal          @db.Decimal(10, 2)
+  allocation_status    AllocationStatus @default(RESERVED)
+  allocated_by_user_id Int?
+  allocated_at         DateTime         @default(now())
+  updated_at           DateTime         @updatedAt
+
+  request         FoodRequest    @relation(fields: [request_id], references: [id], onDelete: Cascade)
+  listing         FoodListing    @relation(fields: [listing_id], references: [id], onDelete: Restrict)
+  allocatedByUser User?          @relation(fields: [allocated_by_user_id], references: [id], onDelete: SetNull)
+  pickups         Pickup[]
+  distributions   Distribution[]
+
+  @@index([request_id])
+  @@index([listing_id])
+  @@index([allocation_status])
+  @@map("request_allocations")
+}
+
+// ==========================================
+// 6. VOLUNTEER ENTITY
+// ==========================================
+model Volunteer {
+  id                    Int             @id @default(autoincrement())
+  user_id               Int             @unique
+  vehicle_type          VehicleType     @default(BIKE)
+  license_number        String?         @db.VarChar(100)
+  availability_status   VolunteerStatus @default(AVAILABLE)
+  operating_city        String          @db.VarChar(100)
+  max_cargo_capacity_kg Decimal?        @db.Decimal(8, 2)
+  deliveries_completed  Int             @default(0)
+  rating                Decimal         @default(5.00) @db.Decimal(3, 2)
+  created_at            DateTime        @default(now())
+  updated_at            DateTime        @updatedAt
+
+  user    User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  pickups Pickup[]
+
+  @@map("volunteers")
+}
+
+// ==========================================
+// 7. PICKUP ENTITY
+// ==========================================
+model Pickup {
+  id                    Int          @id @default(autoincrement())
+  allocation_id         Int
+  listing_id            Int
+  volunteer_id          Int?
+  pickup_time_scheduled DateTime
+  actual_pickup_time    DateTime?
+  pickup_status         PickupStatus @default(SCHEDULED)
+  quantity_collected    Decimal?     @db.Decimal(10, 2)
+  donor_signature_name  String?      @db.VarChar(100)
+  verification_otp      String?      @db.VarChar(10)
+  notes                 String?      @db.Text
+  created_at            DateTime     @default(now())
+  updated_at            DateTime     @updatedAt
+
+  allocation RequestAllocation @relation(fields: [allocation_id], references: [id], onDelete: Cascade)
+  listing    FoodListing       @relation(fields: [listing_id], references: [id], onDelete: Restrict)
+  volunteer  Volunteer?        @relation(fields: [volunteer_id], references: [id], onDelete: SetNull)
+
+  @@index([allocation_id])
+  @@index([listing_id])
+  @@index([volunteer_id])
+  @@index([pickup_status])
+  @@map("pickups")
+}
+
+// ==========================================
+// 8. DISTRIBUTION ENTITY
+// ==========================================
+model Distribution {
+  id                         Int                @id @default(autoincrement())
+  allocation_id              Int
+  ngo_id                     Int
+  beneficiary_group_id       Int?
+  distribution_date          DateTime           @default(now())
+  distributed_quantity       Decimal            @db.Decimal(10, 2)
+  beneficiaries_served_count Int                @default(0)
+  distribution_status        DistributionStatus @default(DISTRIBUTED)
+  received_by_person         String             @db.VarChar(100)
+  verification_signature     String?            @db.VarChar(150)
+  feedback_notes             String?            @db.Text
+  created_at                 DateTime           @default(now())
+  updated_at                 DateTime           @updatedAt
+
+  allocation       RequestAllocation @relation(fields: [allocation_id], references: [id], onDelete: Cascade)
+  ngo              Ngo               @relation(fields: [ngo_id], references: [id], onDelete: Restrict)
+  beneficiaryGroup BeneficiaryGroup? @relation(fields: [beneficiary_group_id], references: [id], onDelete: SetNull)
+
+  @@index([allocation_id])
+  @@index([ngo_id])
+  @@index([beneficiary_group_id])
+  @@map("distributions")
+}
